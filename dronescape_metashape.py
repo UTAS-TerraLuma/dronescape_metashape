@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Script to initialize a Metashape project with RGB and multispectral images in separate chunks.
+Assumes TERN directory structure:
+    <plot>/YYYYMMDD/imagery/
+        ├── rgb/level0_raw/
+        └── multispec/level0_raw/
+User provides:
+    --imagery_dir: path to YYYYMMDD/imagery/
+    --crs: EPSG code for target CRS (optional, defaults to 4326)
+    --out: output directory for Metashape project
+    --enable_oblique: flag to enable oblique cameras (default: disabled)
+Project will be named as "YYYYMMDD-plot.psx"
+
+Example usage:
+    # Basic usage with required arguments
+    -imagery_dir /path/to/SITE-01/20230615/imagery/ -out /path/to/output/
+
+    # With custom CRS
+    imagery_dir /path/to/SITE-01/20230615/imagery/ -out /path/to/output/ -crs 3577
+
+    # Enable oblique cameras
+    imagery_dir /path/to/SITE-01/20230615/imagery/ -out /path/to/output/ -enable_oblique
+
+    # Run diagnostics only without creating project
+    imagery_dir /path/to/SITE-01/20230615/imagery/ -out /path/to/output/ -diagnose_only
+"""
+
+
+import argparse
+import os
+import sys
+import json
+import subprocess
+import pandas as pd
+from pathlib import Path
+import Metashape
+
+from functions.gpu_setup import setup_gpu
+from functions.utils import find_filtered_images
+from functions.camera_ops import id_multispectral_camera
+from functions.camera_ops import enable_oblique_cameras
+from functions.camera_ops import filter_multispec
+
+
+
+def main():
+    # Set up GPU acceleration
+    setup_gpu()
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Initialize Metashape project with RGB and multispectral images.")
+    parser.add_argument('-imagery_dir', required=True, help='Path to YYYYMMDD/imagery/ directory')
+    parser.add_argument('-crs', default="4326", help='EPSG code for target projected CRS (default: 4326, WGS84)')
+    parser.add_argument('-out', required=True, help='Directory to save the Metashape project')
+    parser.add_argument('-enable_oblique', action='store_true', help='Enable oblique cameras (default: disabled)')
+    args = parser.parse_args()
+
+    # Extract YYYYMMDD and plot from input path
+    imagery_dir = Path(args.imagery_dir).resolve()
+    if imagery_dir.name != "imagery":
+        print("The -imagery_dir must point to the 'imagery' directory (e.g., <plot>/YYYYMMDD/imagery/)")
+    yyyymmdd = imagery_dir.parent.name
+    plot = imagery_dir.parent.parent.name
+    project_name = f"{yyyymmdd}-{plot}.psx"
+
+    # Set up paths for RGB and multispectral imagery
+    rgb_dir = imagery_dir / "rgb" / "level0_raw"
+    multispec_dir = imagery_dir / "multispec" / "level0_raw"
+
+    if not rgb_dir.is_dir():
+        print(f"RGB directory not found: {rgb_dir}")
+    if not multispec_dir.is_dir():
+        print(f"Multispec directory not found: {multispec_dir}")
+
+    # Find all RGB images (jpg files)
+    rgb_images = find_filtered_images(rgb_dir, extensions=('.jpg', '.jpeg'))
+    
+    # Find all multispectral images (tif files), excluding Panchro images (ending with _6.tif)
+    multispec_images = find_filtered_images(multispec_dir, extensions=('.tif', '.tiff'), exclude_patterns=('_6.tif',))
+
+    if not rgb_images:
+        print(f"No RGB images found in {rgb_dir}")
+    if not multispec_images:
+        print(f"No multispectral images found in {multispec_dir}")
+
+    print(f"Found {len(rgb_images)} RGB images")
+    print(f"Found {len(multispec_images)} multispectral images (excluding Panchro band)")
+    
+    # Initialize Metashape project and create output directory
+    doc = Metashape.app.document
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    project_path = out_dir / project_name
+    doc.save(str(project_path))
+
+    # Remove default empty chunk if it exists
+    if len(doc.chunks) == 1 and doc.chunks[0].label == "Chunk 1" and len(doc.chunks[0].cameras) == 0:
+        doc.remove(doc.chunks[0])
+
+    # Create separate chunks for RGB and multispectral images
+    rgb_chunk = doc.addChunk()
+    rgb_chunk.label = "rgb_images"
+    
+    multispec_chunk = doc.addChunk()
+    multispec_chunk.label = "multispec_images"
+
+    # Add RGB images to rgb chunk
+    print(f"Adding {len(rgb_images)} RGB images to the project...")
+    rgb_chunk.addPhotos(rgb_images, load_reference=True, load_xmp_calibration=True, 
+                        load_xmp_orientation=True, load_xmp_accuracy=True, load_xmp_antenna=True)
+    
+    # Detect and handle oblique cameras in RGB chunk
+    print("Processing RGB cameras...")
+    oblique_count, oblique_cameras = enable_oblique_cameras(
+        rgb_chunk,
+        args.enable_oblique  # If enable_oblique is True, we enable oblique cameras
+    )
+
+    doc.save()
+
+    # Add multispectral images to multispectral chunk
+    print(f"Adding {len(multispec_images)} multispectral images to the project...")
+    multispec_chunk.addPhotos(multispec_images, layout=Metashape.MultiplaneLayout, load_reference=True, 
+                              load_xmp_calibration=True, load_xmp_orientation=True, load_xmp_accuracy=True, 
+                              load_xmp_antenna=True)
+
+    if len(rgb_chunk.cameras) == 0:
+        print("RGB chunk is empty after adding images.")
+    if len(multispec_chunk.cameras) == 0:
+        print("Multispectral chunk is empty after adding images.")
+
+    # Detect multispectral camera band label and indices
+    id_multispectral_camera(multispec_chunk)
+    
+    # Locate reflectance panels
+    multispec_chunk.locateReflectancePanels()
+    print("Reflectance panel detection complete.")
+
+    # Filter multispectral images based on RGB capture time window using the first oblique camera as end time
+    print("Filtering multisp_simpleectral images outside RGB capture time window...")
+    disabled_count = filter_multispec(rgb_dir, multispec_chunk, rgb_chunk, oblique_cameras)
+
+    print(f"Disabled {disabled_count} multispectral images outside RGB capture window")
+
+    doc.save()
+
+    # Merge RGB and multispectral chunks
+    print("Merging RGB and multispectral chunks...")
+    # mergeChunks creates a new chunk, store the result directly
+    merged_chunk = doc.mergeChunks([rgb_chunk, multispec_chunk])
+    doc.chunks[2].label = "merged_chunk"
+    
+    doc.save()
+    # Remove the original chunks
+    print("Removing original RGB and multispectral chunks...")
+    
+    doc.remove([rgb_chunk, multispec_chunk])
+    doc.save()
+    
+    print('Completed project setup and camera synchronization.')
+
+    # # Set CRS for both chunks
+    # crs_code = args.crs
+    # target_crs = Metashape.CoordinateSystem(f"EPSG::{crs_code}")
+    # rgb_chunk.crs = target_crs
+    # multispec_chunk.crs = target_crs
+
+
+if __name__ == "__main__":
+    main() 
