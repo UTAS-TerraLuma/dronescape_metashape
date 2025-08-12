@@ -170,6 +170,39 @@ def main():
     # rgb_chunk.crs = target_crs
     # multispec_chunk.crs = target_crs
 
+    print("Aligning images...")
+    # Match photos with specified settings
+    chunk.matchPhotos(
+        downscale=1,  # High accuracy
+        generic_preselection=True,  # Enable generic preselection
+        reference_preselection=True,  # Enable reference preselection
+        reference_preselection_mode=Metashape.ReferencePreselectionSource,  # Source mode
+        keypoint_limit=50000,  # Key points limit
+        tiepoint_limit=5000,  # Tie points limit
+        filter_stationary_points=True,  # Exclude stationary points
+        guided_matching=False,  # Disable guided image matching,
+    )
+    
+    # Align cameras
+    chunk.alignCameras()
+    
+    # Optimize cameras with specified parameters
+    chunk.optimizeCameras(
+        fit_f=True,  # Fit focal length
+        fit_cx=True,  # Fit principal point x
+        fit_cy=True,  # Fit principal point y
+        fit_k1=True,  # Fit radial distortion k1
+        fit_k2=True,  # Fit radial distortion k2
+        fit_k3=True,  # Fit radial distortion k3
+        fit_k4=False,  # Fit radial distortion k4
+        fit_p1=True,  # Fit tangential distortion p1
+        fit_p2=True,  # Fit tangential distortion p2
+        fit_b1=True,  # Fit affinity b1
+        fit_b2=True,  # Fit affinity b2
+        fit_corrections=True,  # Fit additional corrections
+    )
+    
+    print("Image alignment complete!")
 
 if __name__ == "__main__":
     main() 
