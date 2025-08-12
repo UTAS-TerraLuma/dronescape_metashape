@@ -18,13 +18,13 @@ Example usage:
     -imagery_dir /path/to/SITE-01/20230615/imagery/ -out /path/to/output/
 
     # With custom CRS
-    imagery_dir /path/to/SITE-01/20230615/imagery/ -out /path/to/output/ -crs 3577
+    -imagery_dir /path/to/SITE-01/20230615/imagery/ -out /path/to/output/ -crs 3577
 
     # Enable oblique cameras
-    imagery_dir /path/to/SITE-01/20230615/imagery/ -out /path/to/output/ -enable_oblique
+    -imagery_dir /path/to/SITE-01/20230615/imagery/ -out /path/to/output/ -enable_oblique
 
     # Run diagnostics only without creating project
-    imagery_dir /path/to/SITE-01/20230615/imagery/ -out /path/to/output/ -diagnose_only
+    -imagery_dir /path/to/SITE-01/20230615/imagery/ -out /path/to/output/ -diagnose_only
 """
 
 
@@ -125,6 +125,9 @@ def main():
     multispec_chunk.addPhotos(multispec_images, layout=Metashape.MultiplaneLayout, load_reference=True, 
                               load_xmp_calibration=True, load_xmp_orientation=True, load_xmp_accuracy=True, 
                               load_xmp_antenna=True)
+    
+    for camera in multispec_chunk.cameras:
+        camera.reference.location_enabled = False
 
     if len(rgb_chunk.cameras) == 0:
         print("RGB chunk is empty after adding images.")
