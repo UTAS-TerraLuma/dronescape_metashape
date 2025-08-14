@@ -42,7 +42,7 @@ from functions.utils import find_filtered_images
 from functions.camera_ops import id_multispectral_camera
 from functions.camera_ops import enable_oblique_cameras
 from functions.camera_ops import filter_multispec
-
+from functions.processing import DICT_SMOOTH_STRENGTH
 
 
 def main():
@@ -142,7 +142,8 @@ def main():
     print("Reflectance panel detection complete.")
 
     # Filter multispectral images based on RGB capture time window using the first oblique camera as end time
-    print("Filtering multisp_simpleectral images outside RGB capture time window...")
+    # NOTE: A 17.78 leap second offset is applied to the multispectral images to align with the RGB images.
+    print("Filtering multispectral images outside RGB capture time window...")
     disabled_count = filter_multispec(rgb_dir, multispec_chunk, rgb_chunk, oblique_cameras)
 
     print(f"Disabled {disabled_count} multispectral images outside RGB capture window")
@@ -164,15 +165,11 @@ def main():
     
     print('Completed project setup and camera synchronization.')
 
-    # # Set CRS for both chunks
-    # crs_code = args.crs
-    # target_crs = Metashape.CoordinateSystem(f"EPSG::{crs_code}")
-    # rgb_chunk.crs = target_crs
-    # multispec_chunk.crs = target_crs
+    merged_chunk = doc.chunk
 
     print("Aligning images...")
     # Match photos with specified settings
-    chunk.matchPhotos(
+    merged_chunk.matchPhotos(
         downscale=1,  # High accuracy
         generic_preselection=True,  # Enable generic preselection
         reference_preselection=True,  # Enable reference preselection
@@ -184,25 +181,61 @@ def main():
     )
     
     # Align cameras
-    chunk.alignCameras()
+    merged_chunk.alignCameras()
     
     # Optimize cameras with specified parameters
-    chunk.optimizeCameras(
+    merged_chunk.optimizeCameras(
         fit_f=True,  # Fit focal length
-        fit_cx=True,  # Fit principal point x
-        fit_cy=True,  # Fit principal point y
-        fit_k1=True,  # Fit radial distortion k1
-        fit_k2=True,  # Fit radial distortion k2
-        fit_k3=True,  # Fit radial distortion k3
-        fit_k4=False,  # Fit radial distortion k4
-        fit_p1=True,  # Fit tangential distortion p1
-        fit_p2=True,  # Fit tangential distortion p2
-        fit_b1=True,  # Fit affinity b1
-        fit_b2=True,  # Fit affinity b2
+        fit_cx=True,  # Fit principal point x, y
+        fit_cy=True,
+        fit_k1=True,  # Fit radial distortion k1, k2, k3
+        fit_k2=True,
+        fit_k3=True,
+        fit_k4=False, # False
+        fit_p1=True,  # Fit tangential distortion p1, p2
+        fit_p2=True,
+        fit_b1=True,  # Fit affinity b1, b2
+        fit_b2=True,
         fit_corrections=True,  # Fit additional corrections
     )
     
     print("Image alignment complete!")
 
+    # Build the model
+    merged_chunk.buildModel(
+        surface_type=Metashape.HeightField,
+        source_data=Metashape.TiePointsData,
+        face_count=Metashape.MediumFaceCount,
+        interpolation=Metashape.EnabledInterpolation,
+        build_texture=False,
+        vertex_colors=False
+    )
+    
+    # Smooth model based on specified strength
+    # print(f"Smoothing model with {smooth_strength} strength...")
+    # smooth_val = DICT_SMOOTH_STRENGTH[smooth_strength]
+    # merged_chunk.smoothModel(smooth_val, fix_borders=True)
+    
+    print("Model building complete!")
+
+    merged_duplicate = merged_chunk.copy()
+    merged_duplicate.label = "merged_duplicate"
+    doc.chunks.append(merged_duplicate)
+    doc.save()
+
+    # # Set CRS for both chunks
+    # crs_code = args.crs
+    # target_crs = Metashape.CoordinateSystem(f"EPSG::{crs_code}")
+    # rgb_chunk.crs = target_crs
+    # multispec_chunk.crs = target_crs
+
+    for cam in merged_chunk.cameras:
+        if cam.photo.path.endswith(".tif"):
+            cam.enabled = False
+
+    for cam in merged_duplicate.cameras:
+        if cam.photo.path.endswith(".jpg"):
+            cam.enabled = False
+
 if __name__ == "__main__":
-    main() 
+    main()
