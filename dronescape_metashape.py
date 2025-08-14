@@ -42,7 +42,7 @@ from functions.utils import find_filtered_images
 from functions.camera_ops import id_multispectral_camera
 from functions.camera_ops import enable_oblique_cameras
 from functions.camera_ops import filter_multispec
-from functions.processing import DICT_SMOOTH_STRENGTH
+# from functions.processing import DICT_SMOOTH_STRENGTH
 
 
 def main():
@@ -229,13 +229,17 @@ def main():
     # rgb_chunk.crs = target_crs
     # multispec_chunk.crs = target_crs
 
+    # Disable multispectral cameras in the merged chunk
     for cam in merged_chunk.cameras:
         if cam.photo.path.endswith(".tif"):
             cam.enabled = False
 
+    # Disable RGB cameras in the merged duplicate chunk
     for cam in merged_duplicate.cameras:
-        if cam.photo.path.endswith(".jpg"):
+        if cam.photo.path.endswith(".JPG"):
             cam.enabled = False
+
+    
 
 if __name__ == "__main__":
     main()
