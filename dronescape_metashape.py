@@ -281,63 +281,20 @@ def main():
     doc.save()
     print(f"Applied raster transform formulas: {raster_transform_formula}")
 
-    print("Building RGB orthomosaic...")
-    try:
-        # Check if model exists (should exist from earlier in the script)
-        if not merged_chunk.model:
-            print("WARNING: Model not found for RGB chunk - this should not happen")
-        
-        # Build orthomosaic using model data as requested
-        merged_chunk.buildOrthomosaic(
-            surface_data=Metashape.ModelData,  # Use model as surface
-            refine_seamlines=True, 
-            blending_mode=Metashape.MosaicBlending
-        )
-        doc.save()
-        
-        # Verify orthomosaic was created successfully
-        if merged_chunk.orthomosaic and merged_chunk.orthomosaic.key:
-            print("RGB orthomosaic built successfully. Details:")
-            print(f"Projection: {merged_chunk.orthomosaic.projection}")
-            print(f"Resolution: {merged_chunk.orthomosaic.resolution}")
-            print(f"Size (pixels): {merged_chunk.orthomosaic.width} x {merged_chunk.orthomosaic.height}")
-        else:
-            print("WARNING: RGB orthomosaic build may have failed - object exists but seems invalid")
-    except Exception as e:
-        print(f"ERROR building RGB orthomosaic: {str(e)}")
+    merged_chunk.buildOrthomosaic(surface_data=Metashape.DataSource.ModelData, 
+                                  refine_seamlines=True, blending_mode=Metashape.MosaicBlending)
+    doc.save() # check blend mode and parameters for Ortho
 
-    print("Building multispectral orthomosaic...")
-    try:
-        # Check if model exists (should exist from earlier in the script)
-        if not merged_duplicate.model:
-            print("WARNING: Model not found for multispectral chunk - this should not happen")
-            
-        # Build orthomosaic using model data as requested
-        merged_duplicate.buildOrthomosaic(
-            surface_data=Metashape.ModelData,  # Use model as surface
-            refine_seamlines=True, 
-            blending_mode=Metashape.MosaicBlending
-        )
-        doc.save()
-        
-        # Verify orthomosaic was created successfully
-        if merged_duplicate.orthomosaic and merged_duplicate.orthomosaic.key:
-            print("Multispectral orthomosaic built successfully. Details:")
-            print(f"Projection: {merged_duplicate.orthomosaic.projection}")
-            print(f"Resolution: {merged_duplicate.orthomosaic.resolution}")
-            print(f"Size (pixels): {merged_duplicate.orthomosaic.width} x {merged_duplicate.orthomosaic.height}")
-        else:
-            print("WARNING: Multispectral orthomosaic build may have failed - object exists but seems invalid")
-    except Exception as e:
-        print(f"ERROR building multispectral orthomosaic: {str(e)}")
+    print(merged_chunk.orthomosaic)
+
+    merged_duplicate.buildOrthomosaic(surface_data=Metashape.DataSource.ModelData, 
+                                      refine_seamlines=True, blending_mode=Metashape.MosaicBlending)
+    doc.save()
+    print(merged_duplicate.orthomosaic)
 
     # Set up output paths for RGB and multispectral orthomosaics
     rgb_out = imagery_dir / "rgb" / "level1_proc"
     multispec_out = imagery_dir / "multispec" / "level1_proc"
-    
-    # Ensure output directories exist
-    rgb_out.mkdir(parents=True, exist_ok=True)
-    multispec_out.mkdir(parents=True, exist_ok=True)
 
     rgb_res = round(merged_chunk.orthomosaic.resolution, 2)
     ms_res = round(merged_duplicate.orthomosaic.resolution, 2)
@@ -352,63 +309,25 @@ def main():
 
     compression = Metashape.ImageCompression()
     compression.tiff_compression = Metashape.ImageCompression.TiffCompressionNone  # disable LZW
-    # compression.jpeg_quality = 95  # set JPEG quality
+    compression.jpeg_quality = 95  # set JPEG quality
     compression.tiff_big = True
     compression.tiff_tiled = True
     compression.tiff_overviews = True
 
-    # Make the RGB chunk the active chunk before export
-    doc.chunk = merged_chunk
-    
-    print("RGB chunk activated, exporting...")
-    try:
-        # Get the active chunk directly like in your working script
-        active_chunk = Metashape.app.document.chunk
-        
-        active_chunk.exportRaster(
-            path=str(rgb_ortho_file), 
-            resolution_x=rgb_res, 
-            resolution_y=rgb_res,
-            image_format=Metashape.ImageFormatTIFF,
-            save_alpha=False, 
-            source_data=Metashape.OrthomosaicData, 
-            image_compression=compression,
-            save_world=False, 
-            save_kml=False, 
-            image_description="RGB orthomosaic",
-            white_background=False, 
-            north_up=True
-        )
-        print("Exported RGB orthomosaic: " + str(rgb_ortho_file))
-    except Exception as e:
-        print(f"ERROR exporting RGB orthomosaic: {str(e)}")
+    merged_chunk.exportRaster(path=str(rgb_ortho_file), resolution_x=rgb_res, resolution_y=rgb_res,
+                        image_format=Metashape.ImageFormatTIFF,
+                        save_alpha=False, source_data=Metashape.OrthomosaicData, image_compression=compression,
+                        save_world=False, save_kml=False, image_description="RGB orthomosaic",
+                        white_background=False, north_up=True)
+    print("Exported RGB orthomosaic: " + str(rgb_ortho_file))
 
-    # Make the multispectral chunk the active chunk before export
-    doc.chunk = merged_duplicate
-    
-    print("Multispectral chunk activated, exporting...")
-    try:
-        # Get the active chunk directly like in your working script
-        active_chunk = Metashape.app.document.chunk
-        
-        active_chunk.exportRaster(
-            path=str(ms_ortho_file), 
-            resolution_x=ms_res, 
-            resolution_y=ms_res,
-            image_format=Metashape.ImageFormatTIFF,
-            raster_transform=Metashape.RasterTransformValue,
-            save_alpha=False, 
-            source_data=Metashape.OrthomosaicData, 
-            image_compression=compression,
-            save_world=False, 
-            save_kml=False, 
-            image_description="Multispectral orthomosaic",
-            white_background=False, 
-            north_up=True
-        )
-        print("Exported multispec orthomosaic: " + str(ms_ortho_file))
-    except Exception as e:
-        print(f"ERROR exporting multispectral orthomosaic: {str(e)}")
+    merged_duplicate.exportRaster(path=str(ms_ortho_file), resolution_x=ms_res, resolution_y=ms_res,
+                        image_format=Metashape.ImageFormatTIFF,
+                        raster_transform=Metashape.RasterTransformValue,
+                        save_alpha=False, source_data=Metashape.OrthomosaicData, image_compression=compression,
+                        save_world=False, save_kml=False, image_description="Multispectral orthomosaic",
+                        white_background=False, north_up=True)
+    print("Exported multispec orthomosaic: " + str(ms_ortho_file))
 
     print("Processing complete!")
     doc.save()
