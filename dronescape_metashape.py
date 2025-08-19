@@ -44,6 +44,22 @@ from functions.camera_ops import enable_oblique_cameras
 from functions.camera_ops import filter_multispec
 # from functions.processing import DICT_SMOOTH_STRENGTH
 
+# def resume_proc():
+    # # Calibrate reflectance 
+    # multispec_chunk.calibrateReflectance(use_reflectance_panels=True, use_sun_sensor=use_sun_sensor)
+
+    # # Raster transform multispectral images
+    # print("Updating Raster Transform for relative reflectance")
+    # raster_transform_formula = []
+    # num_bands = len(multispec_chunk.sensors)
+    # for band in range(1, num_bands+1):
+    #     raster_transform_formula.append("B" + str(band) + "/32768")
+
+    # chunk.raster_transform.formula = raster_transform_formula
+    # chunk.raster_transform.calibrateRange()
+    # chunk.raster_transform.enabled = True
+    # doc.save()
+    # print(f"Applied raster transform formulas: {raster_transform_formula}")
 
 def main():
     # Set up GPU acceleration
@@ -126,6 +142,7 @@ def main():
                               load_xmp_calibration=True, load_xmp_orientation=True, load_xmp_accuracy=True, 
                               load_xmp_antenna=True)
     
+    # Disable multispectral imagery reference locations
     for camera in multispec_chunk.cameras:
         camera.reference.location_enabled = False
 
@@ -137,7 +154,7 @@ def main():
     # Detect multispectral camera band label and indices
     id_multispectral_camera(multispec_chunk)
     
-    # Locate reflectance panels
+    # # Locate reflectance panels
     multispec_chunk.locateReflectancePanels()
     print("Reflectance panel detection complete.")
 
@@ -170,7 +187,8 @@ def main():
     print("Aligning images...")
     # Match photos with specified settings
     merged_chunk.matchPhotos(
-        downscale=1,  # High accuracy
+        # downscale=1,  # High accuracy
+        downscale=8, # Lowest accuracy
         generic_preselection=True,  # Enable generic preselection
         reference_preselection=True,  # Enable reference preselection
         reference_preselection_mode=Metashape.ReferencePreselectionSource,  # Source mode
@@ -229,17 +247,171 @@ def main():
     # rgb_chunk.crs = target_crs
     # multispec_chunk.crs = target_crs
 
-    # Disable multispectral cameras in the merged chunk
-    for cam in merged_chunk.cameras:
-        if cam.photo.path.endswith(".tif"):
-            cam.enabled = False
+    # Remove TIF cameras from merged_chunk
+    tif_cams = [cam for cam in merged_chunk.cameras if cam.photo.path.lower().endswith(".tif")]
+    if tif_cams:
+        merged_chunk.remove(tif_cams)
 
-    # Disable RGB cameras in the merged duplicate chunk
-    for cam in merged_duplicate.cameras:
-        if cam.photo.path.endswith(".JPG"):
-            cam.enabled = False
+    doc.save()
 
+    # Remove JPG cameras from merged_duplicate
+    jpg_cams = [cam for cam in merged_duplicate.cameras if cam.photo.path.lower().endswith(".jpg")]
+    if jpg_cams:
+        merged_duplicate.remove(jpg_cams)
+
+    doc.save()
+
+    print("Project setup complete!")
+    print("###########################")
+    print("###########################")
+
+     # Calibrate reflectance 
+    merged_duplicate.calibrateReflectance(use_reflectance_panels=True, use_sun_sensor=False)
+
+    # Raster transform multispectral images
+    print("Updating Raster Transform for relative reflectance")
+    raster_transform_formula = []
+    num_bands = len(merged_duplicate.sensors)
+    for band in range(1, num_bands+1):
+        raster_transform_formula.append("B" + str(band) + "/32768")
+
+    merged_duplicate.raster_transform.formula = raster_transform_formula
+    merged_duplicate.raster_transform.calibrateRange()
+    merged_duplicate.raster_transform.enabled = True
+    doc.save()
+    print(f"Applied raster transform formulas: {raster_transform_formula}")
+
+    print("Building RGB orthomosaic...")
+    try:
+        # Check if model exists (should exist from earlier in the script)
+        if not merged_chunk.model:
+            print("WARNING: Model not found for RGB chunk - this should not happen")
+        
+        # Build orthomosaic using model data as requested
+        merged_chunk.buildOrthomosaic(
+            surface_data=Metashape.ModelData,  # Use model as surface
+            refine_seamlines=True, 
+            blending_mode=Metashape.MosaicBlending
+        )
+        doc.save()
+        
+        # Verify orthomosaic was created successfully
+        if merged_chunk.orthomosaic and merged_chunk.orthomosaic.key:
+            print("RGB orthomosaic built successfully. Details:")
+            print(f"Projection: {merged_chunk.orthomosaic.projection}")
+            print(f"Resolution: {merged_chunk.orthomosaic.resolution}")
+            print(f"Size (pixels): {merged_chunk.orthomosaic.width} x {merged_chunk.orthomosaic.height}")
+        else:
+            print("WARNING: RGB orthomosaic build may have failed - object exists but seems invalid")
+    except Exception as e:
+        print(f"ERROR building RGB orthomosaic: {str(e)}")
+
+    print("Building multispectral orthomosaic...")
+    try:
+        # Check if model exists (should exist from earlier in the script)
+        if not merged_duplicate.model:
+            print("WARNING: Model not found for multispectral chunk - this should not happen")
+            
+        # Build orthomosaic using model data as requested
+        merged_duplicate.buildOrthomosaic(
+            surface_data=Metashape.ModelData,  # Use model as surface
+            refine_seamlines=True, 
+            blending_mode=Metashape.MosaicBlending
+        )
+        doc.save()
+        
+        # Verify orthomosaic was created successfully
+        if merged_duplicate.orthomosaic and merged_duplicate.orthomosaic.key:
+            print("Multispectral orthomosaic built successfully. Details:")
+            print(f"Projection: {merged_duplicate.orthomosaic.projection}")
+            print(f"Resolution: {merged_duplicate.orthomosaic.resolution}")
+            print(f"Size (pixels): {merged_duplicate.orthomosaic.width} x {merged_duplicate.orthomosaic.height}")
+        else:
+            print("WARNING: Multispectral orthomosaic build may have failed - object exists but seems invalid")
+    except Exception as e:
+        print(f"ERROR building multispectral orthomosaic: {str(e)}")
+
+    # Set up output paths for RGB and multispectral orthomosaics
+    rgb_out = imagery_dir / "rgb" / "level1_proc"
+    multispec_out = imagery_dir / "multispec" / "level1_proc"
     
+    # Ensure output directories exist
+    rgb_out.mkdir(parents=True, exist_ok=True)
+    multispec_out.mkdir(parents=True, exist_ok=True)
+
+    rgb_res = round(merged_chunk.orthomosaic.resolution, 2)
+    ms_res = round(merged_duplicate.orthomosaic.resolution, 2)
+    print("RGB ortho resolution:", rgb_res)
+    print("MS ortho resolution:", ms_res)
+
+    # file naming format: <projname>_multispec_ortho_<res_in_m>.tif
+    rgb_ortho_file = rgb_out / (yyyymmdd + "_" + plot + "_rgb_ortho.tif")
+    ms_ortho_file = multispec_out / (yyyymmdd + "_" + plot + "_multispec_ortho.tif")
+    print("RGB ortho file:", rgb_ortho_file)
+    print("MS ortho file:", ms_ortho_file)
+
+    compression = Metashape.ImageCompression()
+    compression.tiff_compression = Metashape.ImageCompression.TiffCompressionNone  # disable LZW
+    # compression.jpeg_quality = 95  # set JPEG quality
+    compression.tiff_big = True
+    compression.tiff_tiled = True
+    compression.tiff_overviews = True
+
+    # Make the RGB chunk the active chunk before export
+    doc.chunk = merged_chunk
+    
+    print("RGB chunk activated, exporting...")
+    try:
+        # Get the active chunk directly like in your working script
+        active_chunk = Metashape.app.document.chunk
+        
+        active_chunk.exportRaster(
+            path=str(rgb_ortho_file), 
+            resolution_x=rgb_res, 
+            resolution_y=rgb_res,
+            image_format=Metashape.ImageFormatTIFF,
+            save_alpha=False, 
+            source_data=Metashape.OrthomosaicData, 
+            image_compression=compression,
+            save_world=False, 
+            save_kml=False, 
+            image_description="RGB orthomosaic",
+            white_background=False, 
+            north_up=True
+        )
+        print("Exported RGB orthomosaic: " + str(rgb_ortho_file))
+    except Exception as e:
+        print(f"ERROR exporting RGB orthomosaic: {str(e)}")
+
+    # Make the multispectral chunk the active chunk before export
+    doc.chunk = merged_duplicate
+    
+    print("Multispectral chunk activated, exporting...")
+    try:
+        # Get the active chunk directly like in your working script
+        active_chunk = Metashape.app.document.chunk
+        
+        active_chunk.exportRaster(
+            path=str(ms_ortho_file), 
+            resolution_x=ms_res, 
+            resolution_y=ms_res,
+            image_format=Metashape.ImageFormatTIFF,
+            raster_transform=Metashape.RasterTransformValue,
+            save_alpha=False, 
+            source_data=Metashape.OrthomosaicData, 
+            image_compression=compression,
+            save_world=False, 
+            save_kml=False, 
+            image_description="Multispectral orthomosaic",
+            white_background=False, 
+            north_up=True
+        )
+        print("Exported multispec orthomosaic: " + str(ms_ortho_file))
+    except Exception as e:
+        print(f"ERROR exporting multispectral orthomosaic: {str(e)}")
+
+    print("Processing complete!")
+    doc.save()
 
 if __name__ == "__main__":
     main()
