@@ -2,6 +2,9 @@
 # -*- coding: utf-8 -*-
 """
 Script to initialize a Metashape project with RGB and multispectral images in separate chunks.
+
+Author: Juan C. Montes Herrera (University of Tasmania)
+
 Assumes TERN directory structure:
     <plot>/YYYYMMDD/imagery/
         ├── rgb/level0_raw/
@@ -27,7 +30,6 @@ Example usage:
     -imagery_dir /path/to/SITE-01/20230615/imagery/ -out /path/to/output/ -diagnose_only
 """
 
-
 import argparse
 import os
 import sys
@@ -44,23 +46,6 @@ from functions.camera_ops import id_multispectral_camera
 from functions.camera_ops import enable_oblique_cameras
 from functions.camera_ops import filter_multispec
 # from functions.processing import DICT_SMOOTH_STRENGTH
-
-# def resume_proc():
-    # # Calibrate reflectance 
-    # multispec_chunk.calibrateReflectance(use_reflectance_panels=True, use_sun_sensor=use_sun_sensor)
-
-    # # Raster transform multispectral images
-    # print("Updating Raster Transform for relative reflectance")
-    # raster_transform_formula = []
-    # num_bands = len(multispec_chunk.sensors)
-    # for band in range(1, num_bands+1):
-    #     raster_transform_formula.append("B" + str(band) + "/32768")
-
-    # chunk.raster_transform.formula = raster_transform_formula
-    # chunk.raster_transform.calibrateRange()
-    # chunk.raster_transform.enabled = True
-    # doc.save()
-    # print(f"Applied raster transform formulas: {raster_transform_formula}")
 
 def main():
     # Set up GPU acceleration
@@ -264,7 +249,6 @@ def main():
 
     print("Project setup complete!")
     print("###########################")
-    print("###########################")
 
      # Calibrate reflectance 
     merged_duplicate.calibrateReflectance(use_reflectance_panels=True, use_sun_sensor=False)
@@ -273,7 +257,8 @@ def main():
     print("Updating Raster Transform for relative reflectance")
     raster_transform_formula = []
     num_bands = len(merged_duplicate.sensors)
-    for band in range(1, num_bands+1):
+    print(f"Number of bands: {num_bands}")
+    for band in range(1, num_bands):
         raster_transform_formula.append("B" + str(band) + "/32768")
 
     merged_duplicate.raster_transform.formula = raster_transform_formula
@@ -353,10 +338,10 @@ def main():
             merged_chunk.exportRaster(
                 path=rgb_ortho_file,  # Direct string path
                 image_format=Metashape.ImageFormatTIFF,
-                save_alpha=False,
+                save_alpha=True,
                 source_data=Metashape.OrthomosaicData,  # Direct reference, not DataSource.OrthomosaicData
                 image_compression=compression,
-                save_world=True,  # Save world file for easier GIS import
+                save_world=False,  # Save world file for easier GIS import
                 save_kml=False,
                 image_description="RGB orthomosaic",
                 white_background=False,
@@ -379,7 +364,7 @@ def main():
                 save_alpha=False,
                 source_data=Metashape.OrthomosaicData,  # Direct reference, not DataSource.OrthomosaicData
                 image_compression=compression,
-                save_world=True,  # Save world file for easier GIS import
+                save_world=False,  # Save world file for easier GIS import
                 save_kml=False,
                 image_description="Multispectral orthomosaic",
                 white_background=False,
