@@ -47,6 +47,14 @@ from functions.camera_ops import enable_oblique_cameras
 from functions.camera_ops import filter_multispec
 # from functions.processing import DICT_SMOOTH_STRENGTH
 
+# User input
+BUFFER = 2.0
+
+
+
+# RGB camera offset
+p1_cam_offset = (0.087, 0 , 0)
+
 def main():
     # Set up GPU acceleration
     setup_gpu()
@@ -170,11 +178,18 @@ def main():
 
     merged_chunk = doc.chunk
 
+    # Apply camera offset to the first camera
+    merged_chunk.sensors[0].antenna.location_ref = Metashape.Vector(p1_cam_offset)
+    print(f"Camera offset applied to the first camera: {merged_chunk.sensors[0].antenna.location_ref}")
+
     print("Aligning images...")
     # Match photos with specified settings
     merged_chunk.matchPhotos(
-        # downscale=1,  # High accuracy
-        downscale=8, # Lowest accuracy
+        # downscale=0,  # Highest accuracy
+        downscale=1, # High accuracy
+        # downscale=2, # Medium accuracy
+        # downscale=4, # Low accuracy
+        # downscale=8, # Lowest accuracy
         generic_preselection=True,  # Enable generic preselection
         reference_preselection=True,  # Enable reference preselection
         reference_preselection_mode=Metashape.ReferencePreselectionSource,  # Source mode
@@ -190,25 +205,27 @@ def main():
     # Optimize cameras with specified parameters
     merged_chunk.optimizeCameras(
         fit_f=True,  # Fit focal length
-        fit_cx=True,  # Fit principal point x, y
-        fit_cy=True,
-        fit_k1=True,  # Fit radial distortion k1, k2, k3
-        fit_k2=True,
-        fit_k3=True,
-        fit_k4=False, # False
-        fit_p1=True,  # Fit tangential distortion p1, p2
-        fit_p2=True,
-        fit_b1=True,  # Fit affinity b1, b2
-        fit_b2=True,
+        fit_cx=True, fit_cy=True, # Fit principal point x, y
+        fit_k1=True, fit_k2=True, fit_k3=True, fit_k4=False, # Fit radial distortion k1, k2, k3 
+        fit_p1=True, fit_p2=True, # Fit tangential distortion p1, p2
+        fit_b1=True, fit_b2=True, # Fit affinity b1, b2
         fit_corrections=True,  # Fit additional corrections
-    )
+        )
     
     print("Image alignment complete!")
 
+    # print("Building depth maps...")
+    # merged_chunk.buildDepthMaps(
+    #     downscale=4,  # Medium quality (use 1 or 0 for higher detail)
+    #     filter_mode=Metashape.MildFiltering  # Options: NoFiltering, MildFiltering, ModerateFiltering, AggressiveFiltering
+    #     )
+
     # Build the model
     merged_chunk.buildModel(
-        surface_type=Metashape.HeightField,
-        source_data=Metashape.TiePointsData,
+        # surface_type=Metashape.HeightField, # TODO: Add to research tests
+        surface_type=Metashape.Arbitrary, # TODO: Add to research tests
+        source_data=Metashape.TiePointsData, # TODO: Add to research tests
+        # source_data=Metashape.DepthMapsData, # TODO: Add to research tests
         face_count=Metashape.MediumFaceCount,
         interpolation=Metashape.EnabledInterpolation,
         build_texture=False,
@@ -267,13 +284,13 @@ def main():
     doc.save()
     print(f"Applied raster transform formulas: {raster_transform_formula}")
 
-    # Define the coordinate system using user's CRS parameter
+    # # Define the coordinate system using user's CRS parameter
     utm_crs = Metashape.CoordinateSystem(f"EPSG::{crs_code}")
     
-    # Create an OrthoProjection based on that CRS
+    # # Create an OrthoProjection based on that CRS
     ortho_proj = Metashape.OrthoProjection(utm_crs)
     
-    # Assign chunk CRS
+    # # Assign chunk CRS
     merged_chunk.crs = utm_crs
     
     # Build orthomosaic with explicit projection
@@ -307,6 +324,7 @@ def main():
     print("RGB ortho resolution:", rgb_res)
     print("MS ortho resolution:", ms_res)
 
+
     # Set up output paths for RGB and multispectral orthomosaics using string paths
     rgb_out_dir = os.path.join(str(imagery_dir), "rgb", "level1_proc")
     multispec_out_dir = os.path.join(str(imagery_dir), "multispec", "level1_proc")
@@ -335,17 +353,18 @@ def main():
     if merged_chunk.orthomosaic:
         try:
             print("Exporting RGB orthomosaic...")
+            # Simple direct export
             merged_chunk.exportRaster(
-                path=rgb_ortho_file,  # Direct string path
+                path=rgb_ortho_file,
                 image_format=Metashape.ImageFormatTIFF,
                 save_alpha=True,
-                source_data=Metashape.OrthomosaicData,  # Direct reference, not DataSource.OrthomosaicData
+                source_data=Metashape.OrthomosaicData,
                 image_compression=compression,
-                save_world=False,  # Save world file for easier GIS import
-                save_kml=False,
+                save_world=True,
                 image_description="RGB orthomosaic",
                 white_background=False,
-                north_up=True
+                north_up=True,
+                clip_to_boundary=False
             )
             print("Exported RGB orthomosaic:", rgb_ortho_file)
         except Exception as e:
@@ -353,22 +372,24 @@ def main():
     else:
         print("RGB orthomosaic not available. Check previous processing steps.")
 
-    # Verify duplicate orthomosaic exists before exporting
+    # Verify     duplicate orthomosaic exists before exporting
     if merged_duplicate.orthomosaic:
         try:
             print("Exporting multispectral orthomosaic...")
+            
+            # Simple direct export
             merged_duplicate.exportRaster(
-                path=ms_ortho_file,  # Direct string path
+                path=ms_ortho_file,
                 image_format=Metashape.ImageFormatTIFF,
                 raster_transform=Metashape.RasterTransformValue,
                 save_alpha=False,
-                source_data=Metashape.OrthomosaicData,  # Direct reference, not DataSource.OrthomosaicData
+                source_data=Metashape.OrthomosaicData,
                 image_compression=compression,
-                save_world=False,  # Save world file for easier GIS import
-                save_kml=False,
+                save_world=True,
                 image_description="Multispectral orthomosaic",
                 white_background=False,
-                north_up=True
+                north_up=True,
+                clip_to_boundary=False
             )
             print("Exported multispectral orthomosaic:", ms_ortho_file)
         except Exception as e:
@@ -378,6 +399,47 @@ def main():
 
     print("Processing complete!")
     doc.save()
+
+    # Export PDF reports for both chunks
+    print("Generating PDF reports...")
+    
+    # Create metadata directory if it doesn't exist
+    metadata_dir = imagery_dir.parent / "metadata"
+    os.makedirs(str(metadata_dir), exist_ok=True)
+    print(f"Using metadata directory: {metadata_dir}")
+    
+    # RGB chunk report
+    try:
+        merged_chunk = doc.chunk
+        rgb_report_path = str(metadata_dir / f"{yyyymmdd}_{plot}_rgb_report.pdf")
+        merged_chunk.exportReport(
+            path=rgb_report_path,
+            title="RGB Project Report",
+            description="Automated Metashape Processing - RGB Dataset",
+            font_size=12,
+            page_numbers=True,
+            include_system_info=True,
+            user_settings=[("Survey Date", yyyymmdd), ("Processing:", "Juan C. Montes-Herrera")]
+        )
+        print(f"RGB PDF report exported to {rgb_report_path}")
+    except Exception as e:
+        print(f"Error exporting RGB PDF report: {e}")
+    
+    # Multispectral chunk report
+    try:
+        ms_report_path = str(metadata_dir / f"{yyyymmdd}_{plot}_multispec_report.pdf")
+        merged_duplicate.exportReport(
+            path=ms_report_path,
+            title="Multispectral Project Report",
+            description="Automated Metashape Processing - Multispectral Dataset",
+            font_size=12,
+            page_numbers=True,
+            include_system_info=True,
+            user_settings=[("Survey Date", yyyymmdd), ("Processing:", "Juan C. Montes-Herrera")]
+        )
+        print(f"Multispectral PDF report exported to {ms_report_path}")
+    except Exception as e:
+        print(f"Error exporting multispectral PDF report: {e}")
 
 if __name__ == "__main__":
     main()

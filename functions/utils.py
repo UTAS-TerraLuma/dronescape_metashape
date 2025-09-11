@@ -1,6 +1,11 @@
 import os
-import datetime
-import exifread
+
+# Constants
+DICT_SMOOTH_STRENGTH = {
+    'low': 50,      # For low-lying vegetation (grasslands, shrublands)
+    'medium': 100,  # For mixed vegetation
+    'high': 200     # For forested sites
+}
 
 def find_filtered_images(folder, extensions=(), exclude_patterns=()):
     """
@@ -32,11 +37,3 @@ def find_filtered_images(folder, extensions=(), exclude_patterns=()):
             if not should_exclude:
                 image_list.append(os.path.join(root, fname))
     return image_list
-
-
-# Constants
-DICT_SMOOTH_STRENGTH = {
-    'low': 50,      # For low-lying vegetation (grasslands, shrublands)
-    'medium': 100,  # For mixed vegetation
-    'high': 200     # For forested sites
-}
