@@ -25,9 +25,6 @@ Example usage:
 
     # Enable oblique cameras
     -imagery_dir /path/to/SITE-01/20230615/imagery/ -out /path/to/output/ -enable_oblique
-
-    # Run diagnostics only without creating project
-    -imagery_dir /path/to/SITE-01/20230615/imagery/ -out /path/to/output/ -diagnose_only
 """
 
 import argparse
@@ -46,11 +43,6 @@ from functions.camera_ops import id_multispectral_camera
 from functions.camera_ops import enable_oblique_cameras
 from functions.camera_ops import filter_multispec
 # from functions.processing import DICT_SMOOTH_STRENGTH
-
-# User input
-BUFFER = 2.0
-
-
 
 # RGB camera offset
 p1_cam_offset = (0.087, 0 , 0)
@@ -397,8 +389,14 @@ def main():
     else:
         print("Multispectral orthomosaic not available. Check previous processing steps.")
 
-    print("Processing complete!")
+    # Remove orthophotos from orthomosaics
+    print("Removing orthophotos from orthomosaics...")
+    merged_chunk.orthomosaic.removeOrthophotos()
+    merged_duplicate.orthomosaic.removeOrthophotos()
     doc.save()
+    print("Orthophotos removed from orthomosaics.")
+
+    print("Processing complete!")
 
     # Export PDF reports for both chunks
     print("Generating PDF reports...")
@@ -410,16 +408,17 @@ def main():
     
     # RGB chunk report
     try:
-        merged_chunk = doc.chunk
+        # Get RGB chunk (the first chunk, which contains only JPG cameras)
+        rgb_chunk = doc.chunks[0]
         rgb_report_path = str(metadata_dir / f"{yyyymmdd}_{plot}_rgb_report.pdf")
-        merged_chunk.exportReport(
+        rgb_chunk.exportReport(
             path=rgb_report_path,
             title="RGB Project Report",
             description="Automated Metashape Processing - RGB Dataset",
             font_size=12,
             page_numbers=True,
             include_system_info=True,
-            user_settings=[("Survey Date", yyyymmdd), ("Processing:", "Juan C. Montes-Herrera")]
+            user_settings=[("Processing:", "Juan C. Montes-Herrera")]
         )
         print(f"RGB PDF report exported to {rgb_report_path}")
     except Exception as e:
@@ -427,8 +426,10 @@ def main():
     
     # Multispectral chunk report
     try:
+        # Get multispectral chunk (the second chunk, which contains only TIF cameras)
+        ms_chunk = doc.chunks[1]
         ms_report_path = str(metadata_dir / f"{yyyymmdd}_{plot}_multispec_report.pdf")
-        merged_duplicate.exportReport(
+        ms_chunk.exportReport(
             path=ms_report_path,
             title="Multispectral Project Report",
             description="Automated Metashape Processing - Multispectral Dataset",
