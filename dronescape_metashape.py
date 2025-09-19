@@ -12,7 +12,7 @@ Assumes TERN directory structure:
 User provides:
     --imagery_dir: path to YYYYMMDD/imagery/
     --crs: EPSG code for target CRS (optional, defaults to 4326)
-    --out: output directory for Metashape project
+    --out: Metashape project location, not orthomosaics
     --enable_oblique: flag to enable oblique cameras (default: disabled)
 Project will be named as "YYYYMMDD-plot.psx"
 
@@ -43,6 +43,13 @@ from functions.camera_ops import id_multispectral_camera
 from functions.camera_ops import enable_oblique_cameras
 from functions.camera_ops import filter_multispec
 # from functions.processing import DICT_SMOOTH_STRENGTH
+
+## SfM Processing Parameters
+downscale_align = 1
+sun_sensor = False # Only recommended for cloudy conditions. TODO: test
+
+keypoint_limit = int(50000)
+tiepoint_limit = int(5000)
 
 # RGB camera offset
 p1_cam_offset = (0.087, 0 , 0)
@@ -177,16 +184,12 @@ def main():
     print("Aligning images...")
     # Match photos with specified settings
     merged_chunk.matchPhotos(
-        # downscale=0,  # Highest accuracy
-        downscale=1, # High accuracy
-        # downscale=2, # Medium accuracy
-        # downscale=4, # Low accuracy
-        # downscale=8, # Lowest accuracy
+        downscale=downscale_align,
         generic_preselection=True,  # Enable generic preselection
         reference_preselection=True,  # Enable reference preselection
         reference_preselection_mode=Metashape.ReferencePreselectionSource,  # Source mode
-        keypoint_limit=50000,  # Key points limit
-        tiepoint_limit=5000,  # Tie points limit
+        keypoint_limit=keypoint_limit,  # Key points limit
+        tiepoint_limit=tiepoint_limit,  # Tie points limit
         filter_stationary_points=True,  # Exclude stationary points
         guided_matching=False,  # Disable guided image matching,
     )
@@ -206,7 +209,7 @@ def main():
     
     print("Image alignment complete!")
 
-    # print("Building depth maps...")
+    # print("Building depth maps...") # TODO: Add to research tests
     # merged_chunk.buildDepthMaps(
     #     downscale=4,  # Medium quality (use 1 or 0 for higher detail)
     #     filter_mode=Metashape.MildFiltering  # Options: NoFiltering, MildFiltering, ModerateFiltering, AggressiveFiltering
@@ -214,12 +217,11 @@ def main():
 
     # Build the model
     merged_chunk.buildModel(
-        # surface_type=Metashape.HeightField, # TODO: Add to research tests
-        surface_type=Metashape.Arbitrary, # TODO: Add to research tests
+        surface_type=Metashape.Arbitrary,
         source_data=Metashape.TiePointsData, # TODO: Add to research tests
         # source_data=Metashape.DepthMapsData, # TODO: Add to research tests
-        face_count=Metashape.MediumFaceCount,
-        interpolation=Metashape.EnabledInterpolation,
+        face_count=Metashape.MediumFaceCount, # TODO: Add to research tests
+        interpolation=Metashape.EnabledInterpolation, # TODO: Add to research tests
         build_texture=False,
         vertex_colors=False
     )
@@ -260,7 +262,7 @@ def main():
     print("###########################")
 
      # Calibrate reflectance 
-    merged_duplicate.calibrateReflectance(use_reflectance_panels=True, use_sun_sensor=False)
+    merged_duplicate.calibrateReflectance(use_reflectance_panels=True, use_sun_sensor=sun_sensor)
 
     # Raster transform multispectral images
     print("Updating Raster Transform for relative reflectance")
@@ -352,7 +354,9 @@ def main():
                 save_alpha=True,
                 source_data=Metashape.OrthomosaicData,
                 image_compression=compression,
-                save_world=True,
+                save_kml=True,
+                save_world=False,
+                global_profile=True,
                 image_description="RGB orthomosaic",
                 white_background=False,
                 north_up=True,
@@ -377,7 +381,9 @@ def main():
                 save_alpha=False,
                 source_data=Metashape.OrthomosaicData,
                 image_compression=compression,
-                save_world=True,
+                save_kml=True,
+                save_world=False,
+                global_profile=True,
                 image_description="Multispectral orthomosaic",
                 white_background=False,
                 north_up=True,

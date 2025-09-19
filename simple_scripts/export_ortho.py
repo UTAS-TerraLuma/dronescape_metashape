@@ -4,14 +4,15 @@ chunk = Metashape.app.document.chunk
 
 # Set up TIFF compression
 compression = Metashape.ImageCompression()
-compression.tiff_compression = Metashape.ImageCompression.TiffCompressionLZW  # LZW compression
-compression.tiff_big = False        # Enable BigTIFF
-compression.tiff_tiled = False      # Enable tiled TIFF
-compression.tiff_overviews = False  # Generate overviews (pyramids)
+compression.tiff_compression = Metashape.ImageCompression.TiffCompressionNone  # LZW compression
+compression.tiff_big = True        # Enable BigTIFF
+compression.tiff_tiled = True      # Enable tiled TIFF
+compression.tiff_overviews = True  # Generate overviews (pyramids)
+compression.jpeg_quality = 95
 
 # Export orthomosaic with compression and metadata options
 chunk.exportRaster(
-    path=r"C:\Users\jcmontes\Desktop/newband_script.tif",
+    path=r"C:\Users\jcmontes\Desktop/newband_script2.tif",
     image_format=Metashape.ImageFormatTIFF,
     raster_transform=Metashape.RasterTransformValue,
     save_alpha=False,
