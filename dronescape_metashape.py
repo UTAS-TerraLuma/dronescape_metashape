@@ -181,6 +181,11 @@ def main():
     merged_chunk.sensors[0].antenna.location_ref = Metashape.Vector(p1_cam_offset)
     print(f"Camera offset applied to the first camera: {merged_chunk.sensors[0].antenna.location_ref}")
 
+    # Set CRS
+    crs_code = args.crs
+    target_crs = Metashape.CoordinateSystem(f"EPSG::{crs_code}")
+    merged_chunk.crs = target_crs
+
     print("Aligning images...")
     # Match photos with specified settings
     merged_chunk.matchPhotos(
@@ -238,12 +243,6 @@ def main():
     doc.chunks.append(merged_duplicate)
     doc.save()
 
-    # # Set CRS for both chunks
-    crs_code = args.crs
-    target_crs = Metashape.CoordinateSystem(f"EPSG::{crs_code}")
-    merged_chunk.crs = target_crs
-    merged_duplicate.crs = target_crs
-
     # Remove TIF cameras from merged_chunk
     tif_cams = [cam for cam in merged_chunk.cameras if cam.photo.path.lower().endswith(".tif")]
     if tif_cams:
@@ -277,37 +276,20 @@ def main():
     merged_duplicate.raster_transform.enabled = True
     doc.save()
     print(f"Applied raster transform formulas: {raster_transform_formula}")
-
-    # # Define the coordinate system using user's CRS parameter
-    utm_crs = Metashape.CoordinateSystem(f"EPSG::{crs_code}")
-    
-    # # Create an OrthoProjection based on that CRS
-    ortho_proj = Metashape.OrthoProjection(utm_crs)
-    
-    # # Assign chunk CRS
-    merged_chunk.crs = utm_crs
     
     # Build orthomosaic with explicit projection
     merged_chunk.buildOrthomosaic(
         surface_data=Metashape.DataSource.ModelData,
         blending_mode=Metashape.MosaicBlending,
         refine_seamlines=True,
-        projection=ortho_proj   # Using OrthoProjection instead of just CRS
     )
     doc.save() # check blend mode and parameters for Ortho
-
-    # Assign same UTM CRS to duplicate chunk
-    merged_duplicate.crs = utm_crs
-    
-    # Create OrthoProjection for duplicate chunk
-    ortho_proj_duplicate = Metashape.OrthoProjection(utm_crs)
     
     # Build orthomosaic with explicit projection for duplicate chunk
     merged_duplicate.buildOrthomosaic(
         surface_data=Metashape.DataSource.ModelData,
         blending_mode=Metashape.MosaicBlending,
-        refine_seamlines=True,
-        projection=ortho_proj_duplicate  # Using OrthoProjection instead of just CRS
+        refine_seamlines=True
     )
     doc.save()
     print("RGB ortho:", merged_chunk.orthomosaic)
@@ -354,7 +336,7 @@ def main():
                 save_alpha=True,
                 source_data=Metashape.OrthomosaicData,
                 image_compression=compression,
-                save_kml=True,
+                save_kml=False,
                 save_world=False,
                 global_profile=True,
                 image_description="RGB orthomosaic",
@@ -381,7 +363,7 @@ def main():
                 save_alpha=False,
                 source_data=Metashape.OrthomosaicData,
                 image_compression=compression,
-                save_kml=True,
+                save_kml=False,
                 save_world=False,
                 global_profile=True,
                 image_description="Multispectral orthomosaic",
