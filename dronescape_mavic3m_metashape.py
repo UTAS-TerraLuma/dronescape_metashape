@@ -1,101 +1,85 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Script to initialize a Metashape project with RGB and multispectral images in separate chunks.
+Script to initialize a Metashape project with RGB and multispectral images from Mavic 3M.
 
 Author: Juan C. Montes Herrera (University of Tasmania)
 
-Assumes TERN directory structure:
-    <plot>/YYYYMMDD/imagery/
-        ├── rgb/level0_raw/
-        └── multispec/level0_raw/
+Assumes directory structure:
+    <plot>/YYYYMMDD/m3m/level0_raw/ (contains both .jpg and .tif files)
+
 User provides:
-    --imagery_dir: path to YYYYMMDD/imagery/
+    --imagery_dir: path to m3m directory (e.g., <plot>/YYYYMMDD/m3m/)
     --crs: EPSG code for target CRS (optional, defaults to 4326)
     --out: Metashape project location, not orthomosaics
     --enable_oblique: flag to enable oblique cameras (default: disabled)
-Project will be named as "YYYYMMDD-plot.psx"
+Project will be named as "YYYYMMDD-plot-m3m.psx"
 
 Example usage:
     # Basic usage with required arguments
-    -imagery_dir /path/to/SITE-01/20230615/imagery/ -out /path/to/output/
+    -imagery_dir /path/to/SITE-01/20230615/m3m/ -out /path/to/output/
 
     # With custom CRS
-    -imagery_dir /path/to/SITE-01/20230615/imagery/ -out /path/to/output/ -crs 3577
+    -imagery_dir /path/to/SITE-01/20230615/m3m/ -out /path/to/output/ -crs 3577
 
     # Enable oblique cameras
-    -imagery_dir /path/to/SITE-01/20230615/imagery/ -out /path/to/output/ -enable_oblique
+    -imagery_dir /path/to/SITE-01/20230615/m3m/ -out /path/to/output/ -enable_oblique
 """
 
 import argparse
 import os
 import sys
-import json
-import subprocess
-import pandas as pd
 from pathlib import Path
 
 import Metashape
 
 from functions.gpu_setup import setup_gpu
 from functions.utils import find_filtered_images
-from functions.camera_ops import id_multispectral_camera
 from functions.camera_ops import enable_oblique_cameras
-from functions.camera_ops import filter_multispec
-# from functions.processing import DICT_SMOOTH_STRENGTH
 
 ## SfM Processing Parameters
 downscale_align = 4 # Use 4 for tests
-sun_sensor = False # Only recommended for cloudy conditions. TODO: test
 
 keypoint_limit = int(50000)
 tiepoint_limit = int(5000)
-
-# RGB camera offset
-p1_cam_offset = (0.087, 0 , 0)
 
 def main():
     # Set up GPU acceleration
     setup_gpu()
     
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description="Initialize Metashape project with RGB and multispectral images.")
-    parser.add_argument('-imagery_dir', required=True, help='Path to YYYYMMDD/imagery/ directory')
+    parser = argparse.ArgumentParser(description="Initialize Metashape project with RGB and multispectral images from Mavic 3M.")
+    parser.add_argument('-imagery_dir', required=True, help='Path to m3m directory (<plot>/YYYYMMDD/m3m/)')
     parser.add_argument('-crs', default="4326", help='EPSG code for target projected CRS (default: 4326, WGS84)')
     parser.add_argument('-out', required=True, help='Directory to save the Metashape project')
     parser.add_argument('-enable_oblique', action='store_true', help='Enable oblique cameras (default: disabled)')
     args = parser.parse_args()
 
     # Extract YYYYMMDD and plot from input path
-    imagery_dir = Path(args.imagery_dir).resolve()
-    if imagery_dir.name != "imagery":
-        print("The -imagery_dir must point to the 'imagery' directory (e.g., <plot>/YYYYMMDD/imagery/)")
-    yyyymmdd = imagery_dir.parent.name
-    plot = imagery_dir.parent.parent.name
-    project_name = f"{yyyymmdd}-{plot}.psx"
+    m3m_dir = Path(args.imagery_dir).resolve()
+    yyyymmdd = m3m_dir.parent.name
+    plot = m3m_dir.parent.parent.name
+    print(f"Processing plot: {plot}, date: {yyyymmdd}")
+    project_name = f"{yyyymmdd}-{plot}-m3m.psx"
 
-    # Set up paths for RGB and multispectral imagery
-    rgb_dir = imagery_dir / "rgb" / "level0_raw"
-    multispec_dir = imagery_dir / "multispec" / "level0_raw"
+    # Set up path for Mavic 3M imagery (contains both JPG and TIF files)
+    level0_raw_dir = m3m_dir / "level0_raw"
 
-    if not rgb_dir.is_dir():
-        print(f"RGB directory not found: {rgb_dir}")
-    if not multispec_dir.is_dir():
-        print(f"Multispec directory not found: {multispec_dir}")
+    if not level0_raw_dir.is_dir():
+        print(f"level0_raw directory not found: {level0_raw_dir}")
+        sys.exit(1)
 
-    # Find all RGB images (jpg files)
-    rgb_images = find_filtered_images(rgb_dir, extensions=('.jpg', '.jpeg'))
-    
-    # Find all multispectral images (tif files), excluding Panchro images (ending with _6.tif)
-    multispec_images = find_filtered_images(multispec_dir, extensions=('.tif', '.tiff'), exclude_patterns=('_6.tif',))
+    # Find RGB images (jpg files) and multispectral images (tif files)
+    rgb_images = find_filtered_images(level0_raw_dir, extensions=('.jpg', '.jpeg'))
+    multispec_images = find_filtered_images(level0_raw_dir, extensions=('.tif', '.tiff'), exclude_patterns=())
 
     if not rgb_images:
-        print(f"No RGB images found in {rgb_dir}")
+        print(f"No RGB images found in {level0_raw_dir}")
     if not multispec_images:
-        print(f"No multispectral images found in {multispec_dir}")
-
+        print(f"No multispectral images found in {level0_raw_dir}")
+        
     print(f"Found {len(rgb_images)} RGB images")
-    print(f"Found {len(multispec_images)} multispectral images (excluding Panchro band)")
+    print(f"Found {len(multispec_images)} multispectral images")
     
     # Initialize Metashape project and create output directory
     doc = Metashape.app.document
@@ -143,22 +127,8 @@ def main():
         print("RGB chunk is empty after adding images.")
     if len(multispec_chunk.cameras) == 0:
         print("Multispectral chunk is empty after adding images.")
-
-    # Detect multispectral camera band label and indices
-    id_multispectral_camera(multispec_chunk)
-    
-    # # Locate reflectance panels
-    multispec_chunk.locateReflectancePanels()
-    print("Reflectance panel detection complete.")
-
-    # Filter multispectral images based on RGB capture time window using the first oblique camera as end time
-    # NOTE: A 17.78 leap second offset is applied to the multispectral images to align with the RGB images.
-    print("Filtering multispectral images outside RGB capture time window...")
-    disabled_count = filter_multispec(rgb_dir, multispec_chunk, rgb_chunk, oblique_cameras)
-
-    print(f"Disabled {disabled_count} multispectral images outside RGB capture window")
-
-    doc.save()
+        
+    print("\nPhotos loaded successfully into respective chunks.")
 
     # Merge RGB and multispectral chunks
     print("Merging RGB and multispectral chunks...")
@@ -176,10 +146,6 @@ def main():
     print('Completed project setup and camera synchronization.')
 
     merged_chunk = doc.chunk
-
-    # Apply camera offset to the first camera
-    merged_chunk.sensors[0].antenna.location_ref = Metashape.Vector(p1_cam_offset)
-    print(f"Camera offset applied to the first camera: {merged_chunk.sensors[0].antenna.location_ref}")
 
     # Set CRS
     crs_code = args.crs
@@ -219,6 +185,17 @@ def main():
     #     downscale=4,  # Medium quality (use 1 or 0 for higher detail)
     #     filter_mode=Metashape.MildFiltering  # Options: NoFiltering, MildFiltering, ModerateFiltering, AggressiveFiltering
     #     )
+
+    # Build dense point cloud
+    # merged_chunk.buildPointCloud(
+    #     source_data=Metashape.DepthMapsData,  # Extract dense cloud from depth maps
+    #     point_colors=False,                    # Store colors for points
+    #     point_confidence=False,               # Skip confidence values (set True if needed)
+    #     keep_depth=True,                      # Keep depth maps for future use
+    #     max_neighbors=100,                    # Limit neighbor images
+    #     uniform_sampling=True,                # More even density distribution
+    #     points_spacing=0.1                    # Desired point spacing in meters
+    # )
 
     # Build the model
     merged_chunk.buildModel(
@@ -260,9 +237,6 @@ def main():
     print("Project setup complete!")
     print("###########################")
 
-     # Calibrate reflectance 
-    merged_duplicate.calibrateReflectance(use_reflectance_panels=True, use_sun_sensor=sun_sensor)
-
     # Raster transform multispectral images
     print("Updating Raster Transform for relative reflectance")
     raster_transform_formula = []
@@ -276,7 +250,7 @@ def main():
     merged_duplicate.raster_transform.enabled = True
     doc.save()
     print(f"Applied raster transform formulas: {raster_transform_formula}")
-    
+
     # Build orthomosaic with explicit projection
     merged_chunk.buildOrthomosaic(
         surface_data=Metashape.DataSource.ModelData,
@@ -301,20 +275,17 @@ def main():
     print("MS ortho resolution:", ms_res)
 
 
-    # Set up output paths for RGB and multispectral orthomosaics using string paths
-    rgb_out_dir = os.path.join(str(imagery_dir), "rgb", "level1_proc")
-    multispec_out_dir = os.path.join(str(imagery_dir), "multispec", "level1_proc")
+    # Set up output path for both RGB and multispectral orthomosaics
+    out_dir = os.path.join(str(m3m_dir), "level1_proc")
     
-    # Create output directories if they don't exist
-    os.makedirs(rgb_out_dir, exist_ok=True)
-    os.makedirs(multispec_out_dir, exist_ok=True)
+    # Create output directory if it doesn't exist
+    os.makedirs(out_dir, exist_ok=True)
     
-    print("RGB out directory:", rgb_out_dir)
-    print("MS out directory:", multispec_out_dir)
+    print("Output directory:", out_dir)
 
     # Simple string paths for output files
-    rgb_ortho_file = os.path.join(rgb_out_dir, f"{yyyymmdd}_{plot}_rgb_ortho.tif")
-    ms_ortho_file = os.path.join(multispec_out_dir, f"{yyyymmdd}_{plot}_multispec_ortho.tif")
+    rgb_ortho_file = os.path.join(out_dir, f"{yyyymmdd}_{plot}_m3m_rgb_ortho.tif")
+    ms_ortho_file = os.path.join(out_dir, f"{yyyymmdd}_{plot}_m3m_multispec_ortho.tif")
     print("RGB ortho file:", rgb_ortho_file)
     print("MS ortho file:", ms_ortho_file)
 
@@ -385,12 +356,12 @@ def main():
     print("Orthophotos removed from orthomosaics.")
 
     print("Processing complete!")
-
+    
     # Export PDF reports for both chunks
     print("Generating PDF reports...")
     
     # Create metadata directory if it doesn't exist
-    metadata_dir = imagery_dir.parent / "metadata"
+    metadata_dir = m3m_dir.parent / "metadata"
     os.makedirs(str(metadata_dir), exist_ok=True)
     print(f"Using metadata directory: {metadata_dir}")
     
@@ -398,15 +369,15 @@ def main():
     try:
         # Get RGB chunk (the first chunk, which contains only JPG cameras)
         rgb_chunk = doc.chunks[0]
-        rgb_report_path = str(metadata_dir / f"{yyyymmdd}_{plot}_rgb_report.pdf")
+        rgb_report_path = str(metadata_dir / f"{yyyymmdd}_{plot}_m3m_rgb_report.pdf")
         rgb_chunk.exportReport(
             path=rgb_report_path,
             title="RGB Project Report",
-            description="Automated Metashape Processing - RGB Dataset",
+            description="Automated Metashape Processing - RGB Dataset (Mavic 3 Multispectral)",
             font_size=12,
             page_numbers=True,
             include_system_info=True,
-            user_settings=[("Processing:", "Juan C. Montes-Herrera")]
+            user_settings=[("Processing:", "Alice Robbins")]
         )
         print(f"RGB PDF report exported to {rgb_report_path}")
     except Exception as e:
@@ -416,15 +387,15 @@ def main():
     try:
         # Get multispectral chunk (the second chunk, which contains only TIF cameras)
         ms_chunk = doc.chunks[1]
-        ms_report_path = str(metadata_dir / f"{yyyymmdd}_{plot}_multispec_report.pdf")
+        ms_report_path = str(metadata_dir / f"{yyyymmdd}_{plot}_m3m_multispec_report.pdf")
         ms_chunk.exportReport(
             path=ms_report_path,
             title="Multispectral Project Report",
-            description="Automated Metashape Processing - Multispectral Dataset",
+            description="Automated Metashape Processing - Multispectral Dataset (Mavic 3 Multispectral)",
             font_size=12,
             page_numbers=True,
             include_system_info=True,
-            user_settings=[("Survey Date", yyyymmdd), ("Processing:", "Juan C. Montes-Herrera")]
+            user_settings=[("Survey Date", yyyymmdd), ("Processing:", "Alice Robbins")]
         )
         print(f"Multispectral PDF report exported to {ms_report_path}")
     except Exception as e:
