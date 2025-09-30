@@ -7,6 +7,6 @@ The steps outlined here support the creation of analysis-ready data products for
 Detailed instructions on project settings, image selection and alignment, model creation, reflectance conversion, and file export are provided. A key feature of this workflow is the alignment of imagery from both cameras into a unified model used for the orthomosaics surface. Only tie points are used for model creation, reducing computational power and time requirements. The resulting unified model is used to create two separate products: an RGB orthomosaic and a 10-band multispectral orthomosaic. For a summary of the processing steps and information on Agisoft Metashape setup, please refer to the [Drone RGB and Multispectral Processing Protocol](https://www.tern.org.au/field-survey-apps-and-protocols/).
 
 **Funding**: This project was funded by TERN Surveillance  
-**Authors**: J.C. Montes-Herrera, Arko Lucieer, Poornima Sivanandam, Darren Turner.
+**Authors**: J.C. Montes-Herrera, Poornima Sivanandam, Alice Robbins, Arko Lucieer, Darren Turner.
 School of Geography, Planning and Spatial Sciences, University of Tasmania  
 **Acknowledgements**: Ben Sparrow (TERN Surveillance)
