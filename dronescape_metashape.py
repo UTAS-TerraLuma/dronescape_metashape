@@ -42,19 +42,22 @@ from functions.utils import find_filtered_images
 from functions.camera_ops import id_multispectral_camera
 from functions.camera_ops import enable_oblique_cameras
 from functions.camera_ops import filter_multispec
-# from functions.processing import DICT_SMOOTH_STRENGTH
 
 ## SfM Processing Parameters
-downscale_align = 4 # Use 4 for tests
-sun_sensor = False # Only recommended for cloudy conditions. TODO: test
-
-keypoint_limit = int(50000)
-tiepoint_limit = int(5000)
+downscale_align = 2 # Use 4 for tests
+sun_sensor = False # Only recommended for cloudy conditions.
+keypoint_limit = 40000 # Default
+tiepoint_limit = 0
+downscale_depthmaps = 2 # Medium
 
 # RGB camera offset
 p1_cam_offset = (0.087, 0 , 0)
 
 def main():
+    # Clear any existing document to ensure clean state for batch processing
+    doc = Metashape.app.document
+    doc.clear()
+    
     # Set up GPU acceleration
     setup_gpu()
     
@@ -214,27 +217,30 @@ def main():
     
     print("Image alignment complete!")
 
-    # print("Building depth maps...") # TODO: Add to research tests
-    # merged_chunk.buildDepthMaps(
-    #     downscale=4,  # Medium quality (use 1 or 0 for higher detail)
-    #     filter_mode=Metashape.MildFiltering  # Options: NoFiltering, MildFiltering, ModerateFiltering, AggressiveFiltering
-    #     )
+    print("Building depth maps...")
+    merged_chunk.buildDepthMaps(
+        downscale=downscale_depthmaps,  # Quality (4=Low, 2=Medium, 1=High, 0=Ultra)
+        filter_mode=Metashape.MildFiltering,  # Options: NoFiltering, MildFiltering, ModerateFiltering, AggressiveFiltering
+        reuse_depth=False,
+        # max_neighbors=40,
+        subdivide_task=True,
+        )
 
     # Build the model
     merged_chunk.buildModel(
         surface_type=Metashape.Arbitrary,
-        source_data=Metashape.TiePointsData, # TODO: Add to research tests
-        # source_data=Metashape.DepthMapsData, # TODO: Add to research tests
-        face_count=Metashape.MediumFaceCount, # TODO: Add to research tests
-        interpolation=Metashape.EnabledInterpolation, # TODO: Add to research tests
+        # source_data=Metashape.TiePointsData, 
+        source_data=Metashape.DepthMapsData, 
+        face_count=Metashape.HighFaceCount,
+        # face_count=Metashape.CustomFaceCount,
+        # face_count_custom=200000,
+        interpolation=Metashape.EnabledInterpolation,
+        # trimming_radius=3,
         build_texture=False,
-        vertex_colors=False
+        vertex_colors=False,
+        keep_depth=False,
+        subdivide_task=True
     )
-    
-    # Smooth model based on specified strength
-    # print(f"Smoothing model with {smooth_strength} strength...")
-    # smooth_val = DICT_SMOOTH_STRENGTH[smooth_strength]
-    # merged_chunk.smoothModel(smooth_val, fix_borders=True)
     
     print("Model building complete!")
 
