@@ -20,9 +20,6 @@ Example usage:
     # Basic usage with required arguments
     -imagery_dir /path/to/SITE-01/20230615/imagery/ -out /path/to/output/
 
-    # With custom CRS
-    -imagery_dir /path/to/SITE-01/20230615/imagery/ -out /path/to/output/ -crs 3577
-
     # Enable oblique cameras
     -imagery_dir /path/to/SITE-01/20230615/imagery/ -out /path/to/output/ -enable_oblique
 """
@@ -43,12 +40,29 @@ from functions.camera_ops import id_multispectral_camera
 from functions.camera_ops import enable_oblique_cameras
 from functions.camera_ops import filter_multispec
 
-## SfM Processing Parameters
-downscale_align = 2 # Use 4 for tests
+####### SfM Processing Parameters #############
+## Alignment
+downscale_align = 4 # Use 4 for tests
+keypoint_limit = 50000 # Default
+tiepoint_limit = 5000
+
+## Depth maps
+downscale_depthmaps = 4 # Low
+
+## Model
+model_surface = Metashape.Arbitrary
+# model_surface = Metashape.HeightField
+
+# model_source_data= Metashape.TiePointsData
+# model_source_data= Metashape.DepthMapsData
+model_source_data= Metashape.PointCloudData
+
+model_face_count=Metashape.HighFaceCount
+
+## Reflectance
 sun_sensor = False # Only recommended for cloudy conditions.
-keypoint_limit = 40000 # Default
-tiepoint_limit = 0
-downscale_depthmaps = 2 # Medium
+
+################################################
 
 # RGB camera offset
 p1_cam_offset = (0.087, 0 , 0)
@@ -222,24 +236,41 @@ def main():
         downscale=downscale_depthmaps,  # Quality (4=Low, 2=Medium, 1=High, 0=Ultra)
         filter_mode=Metashape.MildFiltering,  # Options: NoFiltering, MildFiltering, ModerateFiltering, AggressiveFiltering
         reuse_depth=False,
-        # max_neighbors=40,
+        max_neighbors=20, # Default 16
         subdivide_task=True,
+        workitem_size_cameras=30, #Default 20
+        max_workgroup_size=150 #Default 100
+        )
+    
+    merged_chunk.buildPointCloud(
+        source_data=Metashape.DepthMapsData,
+        point_colors=False,
+        point_confidence=False,
+        keep_depth=False,
+        max_neighbors=20, # Default 16
+        # uniform_sampling=True,
+        # points_spacing=0.01,
+        subdivide_task=True,
+        workitem_size_cameras=30, # Default 20
+        max_workgroup_size=150 # Default 100
         )
 
     # Build the model
     merged_chunk.buildModel(
-        surface_type=Metashape.Arbitrary,
-        # source_data=Metashape.TiePointsData, 
-        source_data=Metashape.DepthMapsData, 
-        face_count=Metashape.HighFaceCount,
+        surface_type=model_surface,
+        source_data=model_source_data, 
+        face_count=model_face_count,
         # face_count=Metashape.CustomFaceCount,
         # face_count_custom=200000,
         interpolation=Metashape.EnabledInterpolation,
-        # trimming_radius=3,
+        # trimming_radius=0, #Default 10
         build_texture=False,
         vertex_colors=False,
+        vertex_confidence=False,
         keep_depth=False,
-        subdivide_task=True
+        subdivide_task=True,
+        workitem_size_cameras=30, # Default 20
+        max_workgroup_size=150 # Default 100
     )
     
     print("Model building complete!")
@@ -249,14 +280,14 @@ def main():
     doc.chunks.append(merged_duplicate)
     doc.save()
 
-    # Remove TIF cameras from merged_chunk
+    # Remove TIF cameras from merged_chunk (RGB chunk)
     tif_cams = [cam for cam in merged_chunk.cameras if cam.photo.path.lower().endswith(".tif")]
     if tif_cams:
         merged_chunk.remove(tif_cams)
 
     doc.save()
 
-    # Remove JPG cameras from merged_duplicate
+    # Remove JPG cameras from merged_duplicate (Multispec chunk)
     jpg_cams = [cam for cam in merged_duplicate.cameras if cam.photo.path.lower().endswith(".jpg")]
     if jpg_cams:
         merged_duplicate.remove(jpg_cams)
@@ -266,7 +297,7 @@ def main():
     print("Project setup complete!")
     print("###########################")
 
-     # Calibrate reflectance 
+     # Calibrate reflectance of Multispec chunk 
     merged_duplicate.calibrateReflectance(use_reflectance_panels=True, use_sun_sensor=sun_sensor)
 
     # Raster transform multispectral images
