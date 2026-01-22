@@ -42,12 +42,14 @@ from functions.camera_ops import filter_multispec
 
 ####### SfM Processing Parameters #############
 ## Alignment
-downscale_align = 4 # Use 4 for tests
-keypoint_limit = 50000 # Default
-tiepoint_limit = 5000
+downscale_align = 1 # Use 4 for tests
+keypoint_limit = 100000 # Default 40K
+tiepoint_limit = 0 #Default 4K
 
 ## Depth maps
-downscale_depthmaps = 4 # Low
+downscale_depthmaps = 1 # 2 High
+
+## Gradual filter
 
 ## Model
 model_surface = Metashape.Arbitrary
@@ -60,7 +62,7 @@ model_source_data= Metashape.PointCloudData
 model_face_count=Metashape.HighFaceCount
 
 ## Reflectance
-sun_sensor = False # Only recommended for cloudy conditions.
+sun_sensor = True # Only recommended for cloudy conditions.
 
 ################################################
 
@@ -78,7 +80,7 @@ def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Initialize Metashape project with RGB and multispectral images.")
     parser.add_argument('-imagery_dir', required=True, help='Path to YYYYMMDD/imagery/ directory')
-    parser.add_argument('-crs', default="4326", help='EPSG code for target projected CRS (default: 4326, WGS84)')
+    parser.add_argument('-crs', default="4326", help='EPSG code default to 4326(WGS84), need tests for other codes')
     parser.add_argument('-out', required=True, help='Directory to save the Metashape project')
     parser.add_argument('-enable_oblique', action='store_true', help='Enable oblique cameras (default: disabled)')
     args = parser.parse_args()
@@ -213,11 +215,32 @@ def main():
         keypoint_limit=keypoint_limit,  # Key points limit
         tiepoint_limit=tiepoint_limit,  # Tie points limit
         filter_stationary_points=True,  # Exclude stationary points
-        guided_matching=False,  # Disable guided image matching,
+        keep_keypoints=False,
+        guided_matching=False,
     )
     
     # Align cameras
-    merged_chunk.alignCameras()
+    merged_chunk.alignCameras(
+        min_image=2, #Min image count per tie point - Default 2
+        adaptive_fitting=True, # Default? Refines distortion locally
+        subdivide_task=True,
+    )
+
+    print("Image alignment complete!")
+
+    # Filter tie points by reproj. error and uncertainty
+    f = Metashape.TiePoints.Filter()
+    f.init(merged_chunk, Metashape.TiePoints.Filter.ReprojectionError)
+    # How accurately a point can be located in the image
+    f.selectPoints(0.7) # Agisoft best-practice 0.5 / Permissive 1.0
+    f.removePoints(threshold=0.7)
+
+    f.init(merged_chunk, Metashape.TiePoints.Filter.ReconstructionUncertainty)
+    # Estimated 3-D positional uncertainty for each tie point
+    f.selectPoints(15) # Agisoft best-practice 10 / Permissive 20-30
+    f.removePoints(threshold=15)
+
+    print("Best-practice gradual filter complete!")
     
     # Optimize cameras with specified parameters
     merged_chunk.optimizeCameras(
@@ -229,12 +252,12 @@ def main():
         fit_corrections=True,  # Fit additional corrections
         )
     
-    print("Image alignment complete!")
+    print("Optimization complete!")
 
     print("Building depth maps...")
     merged_chunk.buildDepthMaps(
         downscale=downscale_depthmaps,  # Quality (4=Low, 2=Medium, 1=High, 0=Ultra)
-        filter_mode=Metashape.MildFiltering,  # Options: NoFiltering, MildFiltering, ModerateFiltering, AggressiveFiltering
+        filter_mode=Metashape.NoFiltering,  # Options: NoFiltering, MildFiltering, ModerateFiltering, AggressiveFiltering
         reuse_depth=False,
         max_neighbors=20, # Default 16
         subdivide_task=True,
@@ -248,8 +271,8 @@ def main():
         point_confidence=False,
         keep_depth=False,
         max_neighbors=20, # Default 16
-        # uniform_sampling=True,
-        # points_spacing=0.01,
+        uniform_sampling=False,
+        # points_spacing=0.005,
         subdivide_task=True,
         workitem_size_cameras=30, # Default 20
         max_workgroup_size=150 # Default 100
@@ -262,8 +285,8 @@ def main():
         face_count=model_face_count,
         # face_count=Metashape.CustomFaceCount,
         # face_count_custom=200000,
-        interpolation=Metashape.EnabledInterpolation,
-        # trimming_radius=0, #Default 10
+        interpolation=Metashape.DisabledInterpolation, # Default Enabled
+        trimming_radius=5, #Default 10
         build_texture=False,
         vertex_colors=False,
         vertex_confidence=False,
@@ -275,19 +298,28 @@ def main():
     
     print("Model building complete!")
 
+    # Build a canopy-inclusive DEM (i.e. DSM-like)
+    # merged_chunk.buildDem(
+    #     source_data=Metashape.PointCloudData,
+    #     interpolation=Metashape.EnabledInterpolation,
+    #     # resolution=0.01
+    # )
+
+    print("DEM building complete!")
+
     merged_duplicate = merged_chunk.copy()
     merged_duplicate.label = "merged_duplicate"
     doc.chunks.append(merged_duplicate)
     doc.save()
 
-    # Remove TIF cameras from merged_chunk (RGB chunk)
+    # Remove multispec (.TIF) cameras from RGB chunk (merged_chunk)
     tif_cams = [cam for cam in merged_chunk.cameras if cam.photo.path.lower().endswith(".tif")]
     if tif_cams:
         merged_chunk.remove(tif_cams)
 
     doc.save()
 
-    # Remove JPG cameras from merged_duplicate (Multispec chunk)
+    # Remove RGB (.JPG) cameras from Multispec chunk (merged_duplicate)
     jpg_cams = [cam for cam in merged_duplicate.cameras if cam.photo.path.lower().endswith(".jpg")]
     if jpg_cams:
         merged_duplicate.remove(jpg_cams)
@@ -314,19 +346,22 @@ def main():
     doc.save()
     print(f"Applied raster transform formulas: {raster_transform_formula}")
     
-    # Build orthomosaic with explicit projection
+    # Build RGB orthomosaic
     merged_chunk.buildOrthomosaic(
         surface_data=Metashape.DataSource.ModelData,
         blending_mode=Metashape.MosaicBlending,
         refine_seamlines=True,
+        fill_holes=True
     )
-    doc.save() # check blend mode and parameters for Ortho
+    doc.save() 
     
-    # Build orthomosaic with explicit projection for duplicate chunk
+    # Build Multispectral orthomosaic for duplicate chunk
     merged_duplicate.buildOrthomosaic(
         surface_data=Metashape.DataSource.ModelData,
         blending_mode=Metashape.MosaicBlending,
-        refine_seamlines=True
+        refine_seamlines=True,
+        fill_holes=True,
+        # resolution=0.05
     )
     doc.save()
     print("RGB ortho:", merged_chunk.orthomosaic)
@@ -355,6 +390,7 @@ def main():
     print("RGB ortho file:", rgb_ortho_file)
     print("MS ortho file:", ms_ortho_file)
 
+    # Orthomosaic file export compression
     compression = Metashape.ImageCompression()
     compression.tiff_compression = Metashape.ImageCompression.TiffCompressionNone  # disable LZW
     compression.jpeg_quality = 95  # set JPEG quality
@@ -362,7 +398,7 @@ def main():
     compression.tiff_tiled = True
     compression.tiff_overviews = True
 
-    # Verify orthomosaic exists before exporting
+    # Verify orthomosaic exists before exporting and export
     if merged_chunk.orthomosaic:
         try:
             print("Exporting RGB orthomosaic...")
@@ -387,7 +423,7 @@ def main():
     else:
         print("RGB orthomosaic not available. Check previous processing steps.")
 
-    # Verify     duplicate orthomosaic exists before exporting
+    # Verify duplicate orthomosaic exists before exporting
     if merged_duplicate.orthomosaic:
         try:
             print("Exporting multispectral orthomosaic...")
@@ -443,7 +479,7 @@ def main():
             font_size=12,
             page_numbers=True,
             include_system_info=True,
-            user_settings=[("Processing:", "Juan C. Montes-Herrera")]
+            user_settings=[("Processing:", "DATEHERE")]
         )
         print(f"RGB PDF report exported to {rgb_report_path}")
     except Exception as e:
