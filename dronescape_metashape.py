@@ -42,27 +42,20 @@ from functions.camera_ops import filter_multispec
 
 ####### SfM Processing Parameters #############
 ## Alignment
-downscale_align = 1 # Use 4 for tests
-keypoint_limit = 100000 # Default 40K
+downscale_align = 2 # Use 4 for tests
+keypoint_limit = 50000 # Default 40K
 tiepoint_limit = 0 #Default 4K
 
 ## Depth maps
-downscale_depthmaps = 1 # 2 High
-
-## Gradual filter
+downscale_depthmaps = 4 # 2 High
 
 ## Model
 model_surface = Metashape.Arbitrary
-# model_surface = Metashape.HeightField
-
-# model_source_data= Metashape.TiePointsData
-# model_source_data= Metashape.DepthMapsData
 model_source_data= Metashape.PointCloudData
-
-model_face_count=Metashape.HighFaceCount
+model_face_count=Metashape.MediumFaceCount
 
 ## Reflectance
-sun_sensor = True # Only recommended for cloudy conditions.
+sun_sensor = False # Only recommended for cloudy conditions.
 
 ################################################
 
@@ -297,15 +290,6 @@ def main():
     )
     
     print("Model building complete!")
-
-    # Build a canopy-inclusive DEM (i.e. DSM-like)
-    # merged_chunk.buildDem(
-    #     source_data=Metashape.PointCloudData,
-    #     interpolation=Metashape.EnabledInterpolation,
-    #     # resolution=0.01
-    # )
-
-    print("DEM building complete!")
 
     merged_duplicate = merged_chunk.copy()
     merged_duplicate.label = "merged_duplicate"
