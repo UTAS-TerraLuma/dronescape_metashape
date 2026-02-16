@@ -47,7 +47,7 @@ keypoint_limit = 50000 # Default 40K
 tiepoint_limit = 0 #Default 4K
 
 ## Depth maps
-downscale_depthmaps = 4 # 2 High
+downscale_depthmaps = 2 # 2 High
 
 ## Model
 model_surface = Metashape.Arbitrary
@@ -342,7 +342,8 @@ def main():
     # Build Multispectral orthomosaic for duplicate chunk
     merged_duplicate.buildOrthomosaic(
         surface_data=Metashape.DataSource.ModelData,
-        blending_mode=Metashape.MosaicBlending,
+        # blending_mode=Metashape.MosaicBlending,
+        blending_mode=Metashape.AverageBlending,
         refine_seamlines=True,
         fill_holes=True,
         # resolution=0.05
