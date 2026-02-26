@@ -42,7 +42,7 @@ from functions.camera_ops import filter_multispec
 
 ####### SfM Processing Parameters #############
 ## Alignment
-downscale_align = 2 # Use 4 for tests
+downscale_align = 2 # Use 8 for tests
 keypoint_limit = 50000 # Default 40K
 tiepoint_limit = 0 #Default 4K
 
@@ -55,7 +55,7 @@ model_source_data= Metashape.PointCloudData
 model_face_count=Metashape.MediumFaceCount
 
 ## Reflectance
-sun_sensor = True # Only recommended for cloudy conditions.
+sun_sensor = False # Only recommended for cloudy conditions.
 
 ################################################
 
@@ -408,7 +408,7 @@ def main():
     else:
         print("RGB orthomosaic not available. Check previous processing steps.")
 
-    # Verify duplicate orthomosaic exists before exporting
+     # Verify duplicate orthomosaic exists before exporting
     if merged_duplicate.orthomosaic:
         try:
             print("Exporting multispectral orthomosaic...")
@@ -452,41 +452,67 @@ def main():
     os.makedirs(str(metadata_dir), exist_ok=True)
     print(f"Using metadata directory: {metadata_dir}")
     
-    # RGB chunk report
+    # Export PDF Reports
+    # Ensure correct chunks are selected by label
     try:
-        # Get RGB chunk (the first chunk, which contains only JPG cameras)
-        rgb_chunk = doc.chunks[0]
-        rgb_report_path = str(metadata_dir / f"{yyyymmdd}_{plot}_rgb_report.pdf")
-        rgb_chunk.exportReport(
-            path=rgb_report_path,
-            title="RGB Project Report",
-            description="Automated Metashape Processing - RGB Dataset",
-            font_size=12,
-            page_numbers=True,
-            include_system_info=True,
-            user_settings=[("Processing:", "DATEHERE")]
-        )
-        print(f"RGB PDF report exported to {rgb_report_path}")
-    except Exception as e:
-        print(f"Error exporting RGB PDF report: {e}")
-    
-    # Multispectral chunk report
-    try:
-        # Get multispectral chunk (the second chunk, which contains only TIF cameras)
-        ms_chunk = doc.chunks[1]
-        ms_report_path = str(metadata_dir / f"{yyyymmdd}_{plot}_multispec_report.pdf")
-        ms_chunk.exportReport(
-            path=ms_report_path,
-            title="Multispectral Project Report",
-            description="Automated Metashape Processing - Multispectral Dataset",
-            font_size=12,
-            page_numbers=True,
-            include_system_info=True,
-            user_settings=[("Survey Date", yyyymmdd), ("Processing:", "Juan C. Montes-Herrera")]
-        )
-        print(f"Multispectral PDF report exported to {ms_report_path}")
-    except Exception as e:
-        print(f"Error exporting multispectral PDF report: {e}")
+        rgb_chunk = next(c for c in doc.chunks if c.label == "merged_chunk")
+        ms_chunk  = next(c for c in doc.chunks if c.label == "merged_duplicate")
+    except StopIteration:
+        print("Could not find expected chunks for report export.")
+        rgb_chunk = None
+        ms_chunk = None
+
+    # RGB Chunk Report
+    if rgb_chunk:
+        try:
+            rgb_report_path = str(metadata_dir / f"{yyyymmdd}_{plot}_rgb_report.pdf")
+
+            rgb_chunk.label = f"{yyyymmdd}_{plot}_RGB"
+
+            rgb_chunk.exportReport(
+                path=rgb_report_path,
+                title=f"{yyyymmdd} - {plot}",
+                description="Metashape Project Report - RGB Dataset",
+                font_size=12,
+                page_numbers=True,
+                include_system_info=True,
+                user_settings=[
+                    ("Processing Date", datetime.now().strftime("%Y-%m-%d")),
+                    ("Processing Script", "https://github.com/UTAS-TerraLuma/dronescape_metashape"),
+                    ("Processing", "Terraluma Lab, University of Tasmania")
+                ]
+            )
+
+            print(f"RGB PDF report exported to {rgb_report_path}")
+
+        except Exception as e:
+            print(f"Error exporting RGB PDF report: {e}")
+
+    # Multispectral Chunk Report
+    if ms_chunk:
+        try:
+            ms_report_path = str(metadata_dir / f"{yyyymmdd}_{plot}_multispec_report.pdf")
+
+            ms_chunk.label = f"{yyyymmdd}_{plot}_Multispectral"
+
+            ms_chunk.exportReport(
+                path=ms_report_path,
+                title=f"{yyyymmdd} - {plot}",
+                description="Metashape Project Report - Multispectral Dataset",
+                font_size=12,
+                page_numbers=True,
+                include_system_info=True,
+                user_settings=[
+                    ("Processing Date", datetime.now().strftime("%Y-%m-%d")),
+                    ("Processing Script", "https://github.com/UTAS-TerraLuma/dronescape_metashape"),
+                    ("Processing", "Terraluma Lab, University of Tasmania")
+                ]
+            )
+
+            print(f"Multispectral PDF report exported to {ms_report_path}")
+
+        except Exception as e:
+            print(f"Error exporting Multispectral PDF report: {e}")
 
 if __name__ == "__main__":
     main()
