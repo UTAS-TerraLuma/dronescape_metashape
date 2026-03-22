@@ -3,8 +3,6 @@
 """
 Script to initialize a Metashape project with RGB and multispectral images in separate chunks.
 
-Author: Juan C. Montes Herrera (University of Tasmania)
-
 Assumes TERN directory structure:
     <plot>/YYYYMMDD/imagery/
         ├── rgb/level0_raw/
@@ -29,6 +27,7 @@ import os
 import sys
 import json
 import subprocess
+from datetime import datetime
 import pandas as pd
 from pathlib import Path
 
@@ -44,7 +43,7 @@ from functions.camera_ops import filter_multispec
 ## Alignment
 downscale_align = 2 # Use 8 for tests
 keypoint_limit = 50000 # Default 40K
-tiepoint_limit = 0 #Default 4K
+tiepoint_limit = 5000 #Default 4K
 
 ## Depth maps
 downscale_depthmaps = 4 # 2 High
@@ -446,73 +445,45 @@ def main():
 
     # Export PDF reports for both chunks
     print("Generating PDF reports...")
-    
-    # Create metadata directory if it doesn't exist
+
     metadata_dir = imagery_dir.parent / "metadata"
     os.makedirs(str(metadata_dir), exist_ok=True)
-    print(f"Using metadata directory: {metadata_dir}")
-    
-    # Export PDF Reports
-    # Ensure correct chunks are selected by label
-    try:
-        rgb_chunk = next(c for c in doc.chunks if c.label == "merged_chunk")
-        ms_chunk  = next(c for c in doc.chunks if c.label == "merged_duplicate")
-    except StopIteration:
-        print("Could not find expected chunks for report export.")
-        rgb_chunk = None
-        ms_chunk = None
 
-    # RGB Chunk Report
-    if rgb_chunk:
+    doc.save()
+
+    # Define chunks to export
+    report_chunks = [
+        ("rgb", merged_chunk, "RGB Dataset"),
+        ("multispec", merged_duplicate, "Multispectral Dataset")
+    ]
+
+    for suffix, chunk, description in report_chunks:
+
         try:
-            rgb_report_path = str(metadata_dir / f"{yyyymmdd}_{plot}_rgb_report.pdf")
+            doc.chunk = chunk  # make active chunk
 
-            rgb_chunk.label = f"{yyyymmdd}_{plot}_RGB"
+            chunk.label = f"{yyyymmdd}_{plot}_{suffix.upper()}"
 
-            rgb_chunk.exportReport(
-                path=rgb_report_path,
+            report_path = str(metadata_dir / f"{yyyymmdd}_{plot}_{suffix}_report.pdf")
+
+            chunk.exportReport(
+                path=report_path,
                 title=f"{yyyymmdd} - {plot}",
-                description="Metashape Project Report - RGB Dataset",
+                description=f"Metashape Project Report - {description}",
                 font_size=12,
                 page_numbers=True,
                 include_system_info=True,
                 user_settings=[
-                    ("Processing Date", datetime.now().strftime("%Y-%m-%d")),
+                    ("Processing Date", datetime.datetime.now().strftime("%Y-%m-%d")),
                     ("Processing Script", "https://github.com/UTAS-TerraLuma/dronescape_metashape"),
                     ("Processing", "Terraluma Lab, University of Tasmania")
                 ]
             )
 
-            print(f"RGB PDF report exported to {rgb_report_path}")
+            print(f"{suffix.upper()} PDF report exported to {report_path}")
 
         except Exception as e:
-            print(f"Error exporting RGB PDF report: {e}")
-
-    # Multispectral Chunk Report
-    if ms_chunk:
-        try:
-            ms_report_path = str(metadata_dir / f"{yyyymmdd}_{plot}_multispec_report.pdf")
-
-            ms_chunk.label = f"{yyyymmdd}_{plot}_Multispectral"
-
-            ms_chunk.exportReport(
-                path=ms_report_path,
-                title=f"{yyyymmdd} - {plot}",
-                description="Metashape Project Report - Multispectral Dataset",
-                font_size=12,
-                page_numbers=True,
-                include_system_info=True,
-                user_settings=[
-                    ("Processing Date", datetime.now().strftime("%Y-%m-%d")),
-                    ("Processing Script", "https://github.com/UTAS-TerraLuma/dronescape_metashape"),
-                    ("Processing", "Terraluma Lab, University of Tasmania")
-                ]
-            )
-
-            print(f"Multispectral PDF report exported to {ms_report_path}")
-
-        except Exception as e:
-            print(f"Error exporting Multispectral PDF report: {e}")
+            print(f"Error exporting {suffix} PDF report: {e}")
 
 if __name__ == "__main__":
     main()
